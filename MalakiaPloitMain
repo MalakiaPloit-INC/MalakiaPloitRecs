@@ -1,0 +1,572 @@
+// ==UserScript==
+// @name         MalakiaPloit | 1v1.lol Shader
+// @namespace    https://xqr1-studios.pages.dev/malakiaploit/
+// @version      0.1
+// @description  ESP & Aimbot Shaders
+// @author       Malakia Team®️
+// @authoricon   https://cdn.discordapp.com/attachments/1073619537716584530/1078798869896364102/MalakiaPloit-Icon.png
+// @match        *://1v1.lol/*
+// @icon         https://cdn.discordapp.com/attachments/1073619537716584530/1078798869896364102/MalakiaPloit-Icon.png
+// @grant        none
+// @run-at       document-start
+// @match        *://1v1.lol/*
+// @match        *://1v1.school/*
+// @match        *://play1v1.com/*
+// @match        *://boxfight.io/*
+// @match        *://zonewars.io/*
+// @match        *://aim.lol/*
+// @match        *://justaim.lol/*
+// @match        *://justedit.lol/*
+// @require      https://raw.githubusercontent.com/MalakiaPloit-INC/MalakiaPloitReqs/main/Req1
+// @require      https://raw.githubusercontent.com/MalakiaPloit-INC/MalakiaPloitReqs/main/Req2
+// ==/UserScript==
+
+const searchSize = 450;
+const threshold = 4.7;
+const aimbotSpeed = 0.1;
+ 
+let aimbotEnabled = false;
+let espEnabled = false;
+let wireframeEnabled = false;
+let guiEnabled = true;
+ 
+const WebGL = WebGL2RenderingContext.prototype;
+ 
+HTMLCanvasElement.prototype.getContext = new Proxy( HTMLCanvasElement.prototype.getContext, {
+	apply( target, thisArgs, args ) {
+ 
+		if ( args[ 1 ] ) {
+ 
+			args[ 1 ].preserveDrawingBuffer = true;
+ 
+		}
+ 
+		return Reflect.apply( ...arguments );
+ 
+	}
+} );
+ 
+WebGL.shaderSource = new Proxy( WebGL.shaderSource, {
+	apply( target, thisArgs, args ) {
+ 
+		if ( args[ 1 ].indexOf( 'gl_Position' ) > - 1 ) {
+ 
+			args[ 1 ] = args[ 1 ].replace( 'void main', `
+ 
+				out float vDepth;
+				uniform bool enabled;
+				uniform float threshold;
+ 
+				void main
+ 
+			` ).replace( /return;/, `
+ 
+				vDepth = gl_Position.z;
+ 
+				if ( enabled && vDepth > threshold ) {
+ 
+					gl_Position.z = 1.0;
+ 
+				}
+ 
+			` );
+ 
+		} else if ( args[ 1 ].indexOf( 'SV_Target0' ) > - 1 ) {
+ 
+			args[ 1 ] = args[ 1 ].replace( 'void main', `
+ 
+				in float vDepth;
+				uniform bool enabled;
+				uniform float threshold;
+ 
+				void main
+ 
+			` ).replace( /return;/, `
+ 
+				if ( enabled && vDepth > threshold ) {
+ 
+					SV_Target0 = vec4( 1.0, 0.0, 0.0, 1.0 );
+ 
+				}
+ 
+			` );
+ 
+		}
+ 
+		return Reflect.apply( ...arguments );
+ 
+	}
+} );
+ 
+WebGL.getUniformLocation = new Proxy( WebGL.getUniformLocation, {
+	apply( target, thisArgs, [ program, name ] ) {
+ 
+		const result = Reflect.apply( ...arguments );
+ 
+		if ( result ) {
+ 
+			result.name = name;
+			result.program = program;
+ 
+		}
+ 
+		return result;
+ 
+	}
+} );
+ 
+WebGL.uniform4fv = new Proxy( WebGL.uniform4fv, {
+	apply( target, thisArgs, args ) {
+ 
+		if ( args[ 0 ].name === 'hlslcc_mtx4x4unity_ObjectToWorld' ) {
+ 
+			args[ 0 ].program.isUIProgram = true;
+ 
+		}
+ 
+		return Reflect.apply( ...arguments );
+ 
+	}
+} );
+ 
+let movementX = 0, movementY = 0;
+let count = 0;
+ 
+WebGL.drawElements = new Proxy( WebGL.drawElements, {
+	apply( target, thisArgs, args ) {
+ 
+		const program = thisArgs.getParameter( thisArgs.CURRENT_PROGRAM );
+ 
+		if ( ! program.uniforms ) {
+ 
+			program.uniforms = {
+				enabled: thisArgs.getUniformLocation( program, 'enabled' ),
+				threshold: thisArgs.getUniformLocation( program, 'threshold' )
+			};
+ 
+		}
+ 
+		const couldBePlayer = args[ 1 ] > 5000;
+ 
+		thisArgs.uniform1i( program.uniforms.enabled, espEnabled && couldBePlayer );
+		thisArgs.uniform1f( program.uniforms.threshold, threshold );
+ 
+		args[ 0 ] = wireframeEnabled && ! program.isUIProgram && args[ 1 ] > 6 ? thisArgs.LINES : args[ 0 ];
+ 
+		Reflect.apply( ...arguments );
+ 
+		if ( aimbotEnabled && couldBePlayer ) {
+ 
+			const width = Math.min( searchSize, thisArgs.canvas.width );
+			const height = Math.min( searchSize, thisArgs.canvas.height );
+ 
+			const pixels = new Uint8Array( width * height * 4 );
+ 
+			const centerX = thisArgs.canvas.width / 2;
+			const centerY = thisArgs.canvas.height / 2;
+ 
+			const x = Math.floor( centerX - width / 2 );
+			const y = Math.floor( centerY - height / 2 );
+ 
+			thisArgs.readPixels( x, y, width, height, thisArgs.RGBA, thisArgs.UNSIGNED_BYTE, pixels );
+ 
+			for ( let i = 0; i < pixels.length; i += 4 ) {
+ 
+				if ( pixels[ i ] ===255 && pixels[ i + 1 ] === 0 && pixels[ i + 2 ] === 0 && pixels[ i + 3 ] === 255 ) {
+ 
+					const idx = i / 4;
+ 
+					const dx = idx % width;
+					const dy = ( idx - dx ) / width;
+ 
+					movementX += ( x + dx - centerX );
+					movementY += - ( y + dy - centerY );
+ 
+					count ++;
+ 
+				}
+ 
+			}
+ 
+		}
+ 
+	}
+} );
+ 
+window.requestAnimationFrame = new Proxy( window.requestAnimationFrame, {
+	apply( target, thisArgs, args ) {
+ 
+		args[ 0 ] = new Proxy( args[ 0 ], {
+			apply() {
+ 
+				const isPlaying = document.querySelector( 'canvas' ).style.cursor === 'none';
+ 
+                const v = isPlaying && aimbotEnabled ? '' : 'none';
+ 
+                if ( v !== rangeEl.style.display ) {
+ 
+                    rangeEl.style.display = v;
+ 
+                }
+ 
+				if ( count > 0 && isPlaying ) {
+ 
+					const f = aimbotSpeed / count;
+ 
+					movementX *= f;
+					movementY *= f;
+ 
+					window.dispatchEvent( new MouseEvent( 'mousemove', { movementX, movementY } ) );
+ 
+					! rangeEl.classList.contains( 'range-active' ) && rangeEl.classList.add( 'range-active' );
+ 
+				} else {
+ 
+					rangeEl.classList.contains( 'range-active' ) && rangeEl.classList.remove( 'range-active' );
+ 
+				}
+ 
+				movementX = 0;
+				movementY = 0;
+				count = 0;
+ 
+				return Reflect.apply( ...arguments );
+ 
+			}
+		} );
+ 
+		return Reflect.apply( ...arguments );
+ 
+	}
+} )
+ 
+const value = parseInt( new URLSearchParams( window.location.search ).get( 'showAd' ), 16 );
+ 
+const shouldShowAd = isNaN( value ) || Date.now() - value < 0 || Date.now() - value > 10 * 60 * 1000;
+ 
+const el = document.createElement( 'div' );
+ 
+el.innerHTML = `<style>
+ 
+.dialog {
+    border: 1px solid #0098fd;
+    background-color: #f2f2f2;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 5px 5px 5px #0098fd;
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	padding: 20px;
+    background-image: url("https://cdn.discordapp.com/attachments/1073619537716584530/1078799071885656144/MalakiaPloit-Backgorund.png");
+	color: #ffffff;
+	transform: translate(-50%, -50%);
+	text-align: center;
+	z-index: 999999;
+	font-family: cursive;
+}
+ 
+.dialog * {
+	color: #ffffff;
+}
+ 
+.close {
+	position: absolute;
+	right: 5px;
+	top: 5px;
+	width: 20px;
+	height: 20px;
+	opacity: 0.5;
+	cursor: pointer;
+ 
+}
+ 
+.close:before, .close:after {
+	content: ' ';
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 100%;
+	height: 20%;
+	transform: translate(-50%, -50%) rotate(-45deg);
+    background-image: url("https://cdn.discordapp.com/attachments/1073619537716584530/1078799071885656144/MalakiaPloit-Backgorund.png");
+}
+ 
+.close:after {
+	transform: translate(-50%, -50%) rotate(45deg);
+}
+ 
+.close:hover {
+	opacity: 1;
+}
+ 
+.btn {
+    border: 1px solid #0098fd;
+    background-color: #f2f2f2;
+    padding: 20px;
+    border-radius: 10px;
+    cursor: pointer;
+	padding: 0.5em;
+	background: #353535;
+	border: 3px solid rgba(0, 0, 0, 0.3);
+}
+ 
+.btn:active {
+	transform: scale(0.8);
+}
+ 
+.msg {
+    border: 1px solid #ccc;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 5px 5px 5px #0098fd;
+	position: absolute;
+	left: 10px;
+	bottom: 650px;
+    background-image: url("https://cdn.discordapp.com/attachments/1073619537716584530/1078799071885656144/MalakiaPloit-Backgorund.png");
+	color: #ffffff;
+	font-family: cursor;
+	font-weight: bolder;
+	padding: 15px;
+	animation: msg 0.2s forwards, msg 0.2s reverse forwards 2s;
+	z-index: 999999;
+	pointer-events: none;
+}
+ 
+@keyframes msg {
+	from {
+		transform: translate(-120%, 0);
+	}
+ 
+	to {
+		transform: none;
+	}
+}
+ 
+.range { 
+    padding: 20px;
+    border-radius: 300px;
+ 	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: ${searchSize}px;
+	height: ${searchSize}px;
+	max-width: 100%;
+	max-height: 100%;
+	border: 1px solid white;
+	transform: translate(-50%, -50%);
+}
+ 
+.range-active {
+	border-color: #0098fd;
+}
+ 
+</style>
+<div class="dialog">${shouldShowAd ? `<big><big> <img src="https://cdn.discordapp.com/attachments/1073619537716584530/1078800993673822238/MalakiaPloit-FullLogo.png"
+</body>
+  <br>
+  ESP & AimBot Shaders For Best Experience
+  </big>
+	<br>
+	<br>
+	[T] To Get AimBot Shader
+	<br>
+	[M] To get ESP Shader
+	<br>
+  [O] To get Wireframe Shader
+  <br>
+	[Tab] To Hide The Shader Panel
+	<br>
+   [Auto] infinite ammmo, infinite armor, rapid fire
+	<br>
+ <br>
+ Updates
+  </big>
+	<br>
+   [Auto] infinite ammmo, infinite armor, rapid fire
+	<br>
+   <br>---------Made With Love By ©️Malakia.INC---------
+  		<div style="display: grid; grid-template-columns: 1fr 1fr; grid-gap: 7px;">
+        <div class="btn" onclick="window.open('https://discord.gg/WbmnqzNvVp', '_blank')">Support</div>  
+        <div class="btn" onclick="window.open('', '_blank')">Our Website SOON</div>
+	</div>
+	</big>` : `<div class="close" onclick="this.parentNode.style.display='none';"></div>
+	</div>
+	` }
+</div>
+<div class="msg" style="display: none;"></div>
+<div class="range" style="display: none;"></div>`;
+ 
+const msgEl = el.querySelector( '.msg' );
+const dialogEl = el.querySelector( '.dialog' );
+ 
+const rangeEl = el.querySelector( '.range' );
+ 
+window.addEventListener( 'DOMContentLoaded', function () {
+ 
+	while ( el.children.length > 0 ) {
+ 
+		document.body.appendChild( el.children[ 0 ] );
+ 
+	}
+ 
+	if ( shouldShowAd ) {
+ 
+		const url = new URL( window.location.href );
+ 
+		url.searchParams.set( 'RPN', Date.now().toString( 16 ) );
+		url.searchParams.set( 'scriptVersion', GM.info.script.version );
+ 
+	}
+ 
+} );
+ 
+window.addEventListener( 'keyup', function ( event ) {
+ 
+	switch ( String.fromCharCode( event.keyCode ) ) {
+ 
+		case 'M' :
+ 
+			espEnabled = ! espEnabled;
+ 
+			showMsg( 'ESP', espEnabled );
+ 
+			break;
+ 
+		case 'O' :
+ 
+			wireframeEnabled = ! wireframeEnabled;
+ 
+			showMsg( 'Wireframe', wireframeEnabled );
+ 
+			break;
+ 
+		case 'T' :
+ 
+			aimbotEnabled = ! aimbotEnabled;
+ 
+			showMsg( 'Aimbot', aimbotEnabled );
+ 
+			break;
+ 
+		case '\t' :
+ 
+      guiEnabled = ! guiEnabled;
+ 
+			showMsg( '', guiEnabled );
+ 
+ 
+			dialogEl.style.display = dialogEl.style.display === '' ? 'none' : '';
+ 
+			break;
+ 
+	}
+ 
+} );
+ 
+function showMsg( name, bool ) {
+ 
+	msgEl.innerText = name + ' ' + ( bool ? 'Shaders On 🟢 ' : 'Shader Off 🔴' );
+ 
+	msgEl.style.display = 'none';
+ 
+	void msgEl.offsetWidth;
+ 
+	msgEl.style.display = '';
+ 
+}
+
+const Log = function(msg) {
+console.log("1v1.www : " + msg);
+};
+ 
+const wasm = WebAssembly;
+const oldInstantiate = wasm.instantiate; //
+ 
+wasm.instantiate = async function(bufferSource, importObject) {
+    const patcher = new WasmPatcher(bufferSource);
+ 
+    patcher.aobPatchEntry({
+        scan: 'B 20 1 20 1 28 ? ? 41 1 [ 6B ] 36 ? ? 41 84 D7 95 3',
+        code: [
+            OP.drop,
+        ],
+        onsuccess: () => Log('Infinite Ammo')
+    });
+ 
+    patcher.aobPatchEntry({
+        scan: '2A ? ? | 38 ? ? C 2 B 20 0',
+        code: [
+            OP.drop,
+            OP.f32.const, VAR.f32(0)
+        ],
+        onsuccess: () => Log('Rapid Fire')
+    });
+ 
+    patcher.aobPatchEntry({
+        scan: '5 20 0 20 0 28 ? ? ? 20 1 [ 6B ] 36 ? ? ?',
+        code: [
+            OP.drop,
+        ],
+        onsuccess: () => Log('Infinite Armor')
+    });
+ 
+    if(new URLSearchParams( window.location.search ).get('TU9SRUhBQ0tT') === 'true') {
+ 
+        alert('[FreeFly] is added');
+ 
+        const pressSpaceKeyIndex = patcher.addGlobalVariableEntry({
+            type: 'u32',
+            value: 0,
+            mutability: true,
+            exportName: 'PRESS_SPACE_KEY'
+        });
+ 
+        patcher.aobPatchEntry({
+            scan: '4 40 20 B 20 1D 38 2 0 20 F 20 1E [ 38 2 0 ]',
+            code: [
+                OP.global.get, pressSpaceKeyIndex,
+                OP.i32.const, VAR.s32(1),
+                OP.i32.eq,
+                OP.if,
+                    OP.local.get, VAR.u32(15),
+                    OP.f32.const, VAR.f32(2.5),
+                    OP.f32.store, VAR.u32(2), VAR.u32(0),
+                OP.end
+            ],
+            onsuccess: () => Log('Free Fly (offline)')
+        });
+ 
+        patcher.aobPatchEntry({
+            scan: '4 40 20 6 21 3 B 20 1A 20 21 38 2 0 20 F 20 22 [ 38 2 0 ]',
+            code: [
+                OP.drop,
+                OP.drop,
+                OP.global.get, pressSpaceKeyIndex,
+                OP.i32.const, VAR.s32(1),
+                OP.i32.eq,
+                OP.if,
+                    OP.local.get, VAR.u32(15),
+                    OP.f32.const, VAR.f32(2.5),
+                    OP.f32.store, VAR.u32(2), VAR.u32(0),
+                OP.end
+            ],
+            onsuccess: () => Log('Free Fly (online)')
+        });
+    }
+ 
+    const result = await oldInstantiate(patcher.patch(), importObject);
+ 
+    if(new URLSearchParams( window.location.search ).get('TU9SRUhBQ0tT') === 'true') {
+        const exports = result.instance.exports;
+ 
+        const pressSpaceKey = exports.PRESS_SPACE_KEY;
+ 
+        document.addEventListener('keydown', evt => evt.code === 'Space' && (pressSpaceKey.value = 1));
+        document.addEventListener('keyup', evt => evt.code === 'Space' && (pressSpaceKey.value = 0));
+ 
+        localStorage.removeItem('TU9SRUhBQ0tT');
+    }
+ 
+    return result;
+};
